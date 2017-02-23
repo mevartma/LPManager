@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Proxy Manager</title>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+    <script>
+        $(document).ready(function(event){
+            $.getJSON("/api/v1/proxy", function(data){
+                $.each(data, function(index,value){
+                    var tr = $('<tr></tr>');
+
+                    var td_id = $('<td></td>');
+                    td_id.text(value.id);
+                    tr.append(td_id);
+
+                    var td_localpath = $('<td></td>');
+                    td_localpath.text(value.localpath);
+                    tr.append(td_localpath);
+
+                    var td_fullurl = $('<td></td>');
+                    td_fullurl.text(value.fullurl);
+                    tr.append(td_fullurl);
+
+                    var td_remotehost = $('<td></td>');
+                    td_remotehost.text(value.remotehost);
+                    tr.append(td_remotehost);
+
+                    var td_remotepath = $('<td></td>');
+                    td_remotepath.text(value.remotepath);
+                    tr.append(td_remotepath);
+
+                    $("tbody").append(tr);
+                });
+            });
+            $("#form").submit(function(event){
+                var formData = {
+                    "localpath": $('input[name=localpath]').val(),
+                    "fullurl": $('input[name=fullurl]').val(),
+                    "remotehost": $('input[name=remotehost]').val(),
+                    "remotepath": $('input[name=remotepath]').val()
+                };
+                console.log(JSON.stringify(formData));
+                $.ajax({
+                    type: "POST",
+                    url: "/api/v1/proxy",
+                    data: JSON.stringify(formData)
+                }).done(function(data){
+                    setTimeout(function(){
+                        location.reload();
+                    },1000);
+                }).fail(function(data){
+                    console.log(data);
+                });
+
+                event.preventDefault();
+            });
+        });
+    </script>
+</head>
+<body>
+<div id="app">
+    <div class="container">
+        <div class="page-header">
+            <h1>Proxy Manager</h1>
+        </div>
+        <div class="panel panel-defualt">
+            <div class="panel-heading">
+                <h3>Add Proxy</h3>
+            </div>
+            <div class="panel-body">
+                <form id="form" class="form-inline">
+                    <div class="form-group">
+                        <label for="localpath">Local Path:</label>
+                        <input type="text" name="localpath" class="form-control" id="localpath">
+                    </div>
+                    <div class="form-group">
+                        <label for="fullurl">Full URL:</label>
+                        <input type="text" name="fullurl" class="form-control" id="fullurl">
+                    </div>
+                    </br>
+                    <div></div>
+                    </br>
+                    <div class="form-group">
+                        <label for="remotehost">Remote Host Name:</label>
+                        <input type="text" name="remotehost" class="form-control" id="remotehost">
+                    </div>
+                    <div class="form-group">
+                        <label for="remotepath">Remote Path:</label>
+                        <input type="text" name="remotepath" class="form-control" id="remotepath">
+                    </div>
+                    </br>
+                    <input type="submit" id="btnSubmit" class="btn btn-primart" value="Add Proxy">
+                </form>
+            </div>
+        </div>
+        <div class="panel panel-defualt">
+            <div class="panel-heading">
+                <h3>Proxy List</h3>
+            </div>
+            <div class="panel-body">
+                <table id="proxydata" class="table table-striped">
+                    <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Local Path</th>
+                        <th>Full URL</th>
+                        <th>Remote Host Name</th>
+                        <th>Remote Path</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- built files will be auto injected -->
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+</body>
+</html>
