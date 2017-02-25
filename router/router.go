@@ -12,7 +12,9 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
 var pages []model.ProxySetting
@@ -32,6 +34,82 @@ func NewMux() http.Handler {
 	h.Handle("/api/v1/proxy", loggerMid(http.HandlerFunc(proxy)))
 	h.Handle("/", loggerMid(http.HandlerFunc(home)))
 	return h
+}
+
+func logoutUser(resp http.ResponseWriter, req *http.Request) {
+}
+
+func loginUser(resp http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
+	var user model.User
+
+	user.Password = fmt.Sprintf("%v", req.Form["password"])
+	user.UserName = fmt.Sprintf("%v", req.Form["username"])
+
+	ps, err := utils.CreateSalt(&user)
+	if err != nil {
+		log.Fatal(err)
+		http.Error(resp, err.Error(), http.StatusInternalServerError)
+	}
+
+	tUser, err := db.GetUser(user.UserName)
+	if err != nil {
+		log.Fatal(err)
+		http.Error(resp, err.Error(), http.StatusInternalServerError)
+	}
+
+	if tUser.Salt != ps {
+		//status not auth
+		resp.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	cookieMonster := &http.Cookie{
+		Name:    "SessionID",
+		Expires: time.Now().AddDate(0, 0, 1),
+		Value:   ps,
+	}
+
+	http.SetCookie(resp, cookieMonster)
+	http.Redirect(resp,req,"/app",http.StatusOK)
+}
+
+func registerUser(resp http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
+	var user model.User
+	var inUser model.InternalUsers
+	var endStatus model.Status
+
+	user.Email = fmt.Sprintf("%v", req.Form["email"])
+	user.Password = fmt.Sprintf("%v", req.Form["password"])
+	user.UserName = fmt.Sprintf("%v", req.Form["username"])
+
+	ps, err := utils.CreateSalt(&user)
+	if err != nil {
+		log.Fatal(err)
+		http.Error(resp, err.Error(), http.StatusInternalServerError)
+	}
+
+	inUser.UserName = user.UserName
+	inUser.Email = user.Email
+	inUser.Salt = ps
+
+	err = db.UpdateUser(inUser, "add")
+	if err != nil {
+		log.Fatal(err)
+		http.Error(resp, err.Error(), http.StatusInternalServerError)
+	}
+
+	endStatus.Message = fmt.Sprintf("User %s with email %s has created", inUser.UserName, inUser.Email)
+	endStatus.Action = "Create User"
+	js, err := json.Marshal(endStatus)
+	if err != nil {
+		log.Fatal(err)
+		http.Error(resp, err.Error(), http.StatusInternalServerError)
+	}
+	resp.Header().Set("Content-type", "application/json")
+	resp.Write(js)
+	return
 }
 
 func proxy(resp http.ResponseWriter, req *http.Request) {
@@ -152,3 +230,9 @@ func loggerMid(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+/*func userMid(next http.Handler) http.Handler {
+	return http.HandleFunc(func(w http.ResponseWriter, r *http.Request) {
+		coocki, _ := r.Cookie("SessionID")
+	})
+}*/
