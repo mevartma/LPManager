@@ -12,7 +12,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -32,84 +31,8 @@ func NewMux() http.Handler {
 	fs := http.FileServer(http.Dir("templates/"))
 	h.Handle("/app/", loggerMid(http.StripPrefix("/app", fs)))
 	h.Handle("/api/v1/proxy", loggerMid(http.HandlerFunc(proxy)))
-	h.Handle("/", loggerMid(http.HandlerFunc(home)))
+	h.Handle("/", http.HandlerFunc(home))
 	return h
-}
-
-func logoutUser(resp http.ResponseWriter, req *http.Request) {
-}
-
-func loginUser(resp http.ResponseWriter, req *http.Request) {
-	req.ParseForm()
-	var user model.User
-
-	user.Password = fmt.Sprintf("%v", req.Form["password"])
-	user.UserName = fmt.Sprintf("%v", req.Form["username"])
-
-	ps, err := utils.CreateSalt(&user)
-	if err != nil {
-		log.Fatal(err)
-		http.Error(resp, err.Error(), http.StatusInternalServerError)
-	}
-
-	tUser, err := db.GetUser(user.UserName)
-	if err != nil {
-		log.Fatal(err)
-		http.Error(resp, err.Error(), http.StatusInternalServerError)
-	}
-
-	if tUser.Salt != ps {
-		//status not auth
-		resp.WriteHeader(http.StatusUnauthorized)
-		return
-	}
-
-	cookieMonster := &http.Cookie{
-		Name:    "SessionID",
-		Expires: time.Now().AddDate(0, 0, 1),
-		Value:   ps,
-	}
-
-	http.SetCookie(resp, cookieMonster)
-	http.Redirect(resp,req,"/app",http.StatusOK)
-}
-
-func registerUser(resp http.ResponseWriter, req *http.Request) {
-	req.ParseForm()
-	var user model.User
-	var inUser model.InternalUsers
-	var endStatus model.Status
-
-	user.Email = fmt.Sprintf("%v", req.Form["email"])
-	user.Password = fmt.Sprintf("%v", req.Form["password"])
-	user.UserName = fmt.Sprintf("%v", req.Form["username"])
-
-	ps, err := utils.CreateSalt(&user)
-	if err != nil {
-		log.Fatal(err)
-		http.Error(resp, err.Error(), http.StatusInternalServerError)
-	}
-
-	inUser.UserName = user.UserName
-	inUser.Email = user.Email
-	inUser.Salt = ps
-
-	err = db.UpdateUser(inUser, "add")
-	if err != nil {
-		log.Fatal(err)
-		http.Error(resp, err.Error(), http.StatusInternalServerError)
-	}
-
-	endStatus.Message = fmt.Sprintf("User %s with email %s has created", inUser.UserName, inUser.Email)
-	endStatus.Action = "Create User"
-	js, err := json.Marshal(endStatus)
-	if err != nil {
-		log.Fatal(err)
-		http.Error(resp, err.Error(), http.StatusInternalServerError)
-	}
-	resp.Header().Set("Content-type", "application/json")
-	resp.Write(js)
-	return
 }
 
 func proxy(resp http.ResponseWriter, req *http.Request) {
@@ -200,6 +123,42 @@ func home(resp http.ResponseWriter, req *http.Request) {
 				return
 			}
 
+			/*--------------------------------------------------------------------------*/
+
+			//cookie, _ := req.Cookie("SessionID")
+
+			//reqBody,_ := req.GetBody()
+			logRequest, err := model.NewRequest(req.Method,req.URL.String(),bytes.NewReader(b))
+			utils.CopyHeader(req.Header,logRequest.Header)
+
+			SessionID := model.Session{
+				SessionId: "dfgsdfgsdfgd",
+				TTL: 111111111111,
+			}
+
+			respBosy,_ := ioutil.ReadAll(rs.Body)
+			logResponse := http.Response{}
+
+			temp := bytes.NewReader(respBosy)
+			logResponse.Body = ioutil.NopCloser(temp)
+
+
+			HttpRequest := model.HttpRequestNode{
+				SessionId: SessionID,
+				AfterNodeId: "11111111111",
+				BeforeNodeId: "11111111111",
+				HttpResp: logResponse,
+				HttpReq: logRequest,
+				NodeId: "11111111111",
+			}
+
+			err = db.SaveToElasticSearch(HttpRequest)
+			if err != nil {
+				log.Println(err)
+			}
+
+			/*--------------------------------------------------------------------------*/
+
 			utils.CopyHeader(rs.Header, resp.Header())
 			resp.WriteHeader(rs.StatusCode)
 			io.Copy(resp, rs.Body)
@@ -218,7 +177,7 @@ func updatePages() error {
 
 func loggerMid(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var clIP string
+		/*var clIP string
 		if r.Header.Get("X-Forwarded-For") == "" {
 			clIP = r.RemoteAddr
 		} else {
@@ -226,13 +185,118 @@ func loggerMid(next http.Handler) http.Handler {
 		}
 
 		uAgent := r.Header.Get("User-Agent")
-		log.Printf("\"Method\": \"%s\", \"User-Agent\": \"%s\", \"URL\": \"%s\", \"Host\": \"[%s]\", \"Client-IP\": \"%v\"", r.Method, uAgent, r.URL, r.Host, clIP)
+		log.Printf("\"Method\": \"%s\", \"User-Agent\": \"%s\", \"URL\": \"%s\", \"Host\": \"[%s]\", \"Client-IP\": \"%v\"", r.Method, uAgent, r.URL, r.Host, clIP)*/
 		next.ServeHTTP(w, r)
 	})
 }
 
-/*func userMid(next http.Handler) http.Handler {
-	return http.HandleFunc(func(w http.ResponseWriter, r *http.Request) {
-		coocki, _ := r.Cookie("SessionID")
+func sessionMid(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+		cookie, err := req.Cookie("SessionID")
+		if err != nil {
+			next.ServeHTTP(resp,req)
+		}
+
+		if cookie == nil {
+			t1 := time.Now()
+			unixtime := t1.Unix()
+			uAgent := req.Header.Get("User-Agent")
+			cookie, err := utils.CreateSessionCoockie(uAgent,t1)
+			if err.Error() == "new sess" {
+				t1 = time.Now()
+				unixtime = t1.Unix()
+				cookie, err = utils.CreateSessionCoockie(uAgent,t1)
+				if err.Error() == "new sess" {
+					next.ServeHTTP(resp,req)
+				}
+
+				cookieMonster := &http.Cookie{
+					Name: "SessionID",
+					Expires: t1,
+					Value: cookie,
+					HttpOnly: true,
+					MaxAge: int(unixtime),
+					Path: "/",
+				}
+
+				var sessionItem model.Session
+				sessionItem.SessionId = cookie
+				sessionItem.TTL = unixtime
+				utils.SaveSession(sessionItem)
+
+				http.SetCookie(resp,cookieMonster)
+				next.ServeHTTP(resp,req)
+			}
+
+			cookieMonster := &http.Cookie{
+				Name: "SessionID",
+				Expires: t1,
+				Value: cookie,
+				HttpOnly: true,
+				MaxAge: int(unixtime),
+				Path: "/",
+			}
+
+			var sessionItem model.Session
+			sessionItem.SessionId = cookie
+			sessionItem.TTL = unixtime
+			utils.SaveSession(sessionItem)
+
+			http.SetCookie(resp,cookieMonster)
+			next.ServeHTTP(resp,req)
+		}
+
+		re := utils.CheckSession(cookie.Value)
+
+		if re == true {
+			t1 := time.Now()
+			unixtime := t1.Unix()
+			uAgent := req.Header.Get("User-Agent")
+			cookie, err := utils.CreateSessionCoockie(uAgent,t1)
+			if err.Error() == "new sess" {
+				t1 = time.Now()
+				unixtime = t1.Unix()
+				cookie, err = utils.CreateSessionCoockie(uAgent,t1)
+				if err.Error() == "new sess" {
+					next.ServeHTTP(resp,req)
+				}
+
+				cookieMonster := &http.Cookie{
+					Name: "SessionID",
+					Expires: t1,
+					Value: cookie,
+					HttpOnly: true,
+					MaxAge: int(unixtime),
+					Path: "/",
+				}
+
+				var sessionItem model.Session
+				sessionItem.SessionId = cookie
+				sessionItem.TTL = unixtime
+				utils.SaveSession(sessionItem)
+
+				http.SetCookie(resp,cookieMonster)
+				next.ServeHTTP(resp,req)
+			}
+			cookieMonster := &http.Cookie{
+				Name: "SessionID",
+				Expires: t1,
+				Value: cookie,
+				HttpOnly: true,
+				MaxAge: int(unixtime),
+				Path: "/",
+			}
+
+			var sessionItem model.Session
+			sessionItem.SessionId = cookie
+			sessionItem.TTL = unixtime
+			utils.SaveSession(sessionItem)
+
+			http.SetCookie(resp,cookieMonster)
+			next.ServeHTTP(resp,req)
+		}
+
+
+		next.ServeHTTP(resp,req)
 	})
-}*/
+}
